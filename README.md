@@ -35,41 +35,92 @@ Required components:
 - **AHT10** (I²C)
 - **MQ135** gas sensor
 - **MQ3** gas/alcohol sensor
-- Analog multiplexer (for sharing ADC between MQ sensors)
+- Analog multiplexer (CD4052 or similar, for sharing ADC between MQ sensors)
 - **MAX7219** LED display (7-segment or matrix)
 - Breadboard / wires, 5V power supply for sensors as required
 
-Typical connections (example, adjust to your wiring):
+## PIN OUTS / GPIO Configuration
 
-- **I²C bus**
-  - `SDA` → NodeMCU `D2`
-  - `SCL` → NodeMCU `D1`
-  - Both BMP/BME and AHT10 are connected to the same I²C bus
-- **MAX7219**
-  - `DIN`, `CLK`, `CS` connected to three GPIO pins (configured in script)
-- **MQ sensors + multiplexer**
-  - MQ135 and MQ3 → analog multiplexer inputs  
-  - MUX output → NodeMCU `A0`  
-  - MUX select pins → two GPIO pins (S0/S1), see log lines like `[MUX] ch=0 S0=0 S1=0`
+All pin mappings are defined in `meteo.lua` and use NodeMCU D-pin notation (D0–D8 = GPIO 16, 5, 4, 0, 2, 14, 12, 13, 15):
 
-Check the Lua sources for the exact pin mapping used.
+| **Function** | **NodeMCU Pin** | **GPIO** | **Notes** |
+|---|---|---|---|
+| **I²C SDA** | D2 | GPIO4 | BMP280 + AHT10 (shared bus) |
+| **I²C SCL** | D1 | GPIO5 | BMP280 + AHT10 (shared bus) |
+| **MAX7219 DIN** | D7 | GPIO13 | SPI Data In |
+| **MAX7219 CS** | D6 | GPIO12 | Chip Select |
+| **MAX7219 CLK** | D5 | GPIO14 | SPI Clock |
+| **MUX S0** | D0 | GPIO16 | Multiplexer channel bit 0 |
+| **MUX S1** | D8 | GPIO15 | Multiplexer channel bit 1 |
+| **ADC (MQ135/MQ3)** | A0 | ADC0 | Analog input from MUX output |
+
+### Multiplexer Channels
+
+The CD4052 (or similar) multiplexer routes MQ sensors to the single ADC input:
+
+| **Channel** | **S1** | **S0** | **Sensor** |
+|---|---|---|---|
+| 0 | 0 | 0 | MQ135 (air quality) |
+| 1 | 0 | 1 | MQ3 (alcohol) |
+
+The multiplexer output is connected to NodeMCU **A0** (ADC0).
+
+### I²C Bus Wiring
+
+Both BMP280/BME280 and AHT10 share the same I²C bus:
+
+```
+NodeMCU D2 (SDA) ──── BMP280/BME280 SDA
+                 \─── AHT10 SDA
+                 
+NodeMCU D1 (SCL) ──── BMP280/BME280 SCL
+                 \─── AHT10 SCL
+
+GND ──────────────── BMP280/BME280 GND
+                 \─── AHT10 GND
+                 
+3.3V ─────────────── BMP280/BME280 VCC
+                 \─── AHT10 VCC
+```
+
+## Configuration
+
+Tunable parameters are defined at the top of `meteo.lua`:
+
+| **Parameter** | **Value** | **Description** |
+|---|---|---|
+| `ALT_M` | 200 | Altitude in meters (used to calculate QNH sea-level pressure) |
+| Measurement interval | 5000 ms | Set via `tmr.create():alarm(5000, ...)` in `M.start()` |
+| Heartbeat interval | 30000 ms | Set via `tmr.create():alarm(30000, ...)` in `M.start()` |
+| Display cycle | 4 states | Rotates: MQ135 → MQ3 → Tavg×10 → Pressure |
+
+### MQ Sensor Calibration
+
+The MQ sensors use a **baseline calibration** approach:
+
+- On first read, the raw ADC value is stored as the baseline (`mq135_base`, `mq3_base`)
+- Subsequent readings are compared as a ratio to the baseline
+- Classification is done using thresholds (e.g., ratio < 0.85 = "cleaner", ratio < 1.20 = "normal", etc.)
+
+Adjust the classification thresholds in `classify_mq135()` and `classify_mq3()` functions as needed.
 
 ## Firmware
 
 This project is built on **NodeMCU** firmware with a minimal set of modules to save RAM.
-Currently used modules:
-- `adc`
-- `bit`
-- `bme280`  (for BMP280/BME280)
-- `file`
-- `gpio`
-- `i2c`
-- `node`
-- `spi`
-- `tmr`
 
-You need to build a custom NodeMCU firmware (for ESP8266) with at least these modules enabled.  
-Any other modules (WiFi, net, http, etc.) are optional and currently **not** used.
+**Required modules:**
+- `adc` – analog-to-digital conversion for MQ sensors
+- `bit` – bit operations for MUX channel selection
+- `bme280` – BMP280/BME280 pressure and temperature sensor
+- `file` – file operations (optional, for future use)
+- `gpio` – GPIO control
+- `i2c` – I²C bus communication
+- `node` – node control and heap info
+- `spi` – SPI interface (used by MAX7219)
+- `tmr` – timers
+
+You need to build a custom NodeMCU firmware for **ESP8266** with at least these modules enabled.  
+Any other modules (WiFi, net, http, etc.) are **not** currently used.
 
 ## Getting Started
 
@@ -83,6 +134,7 @@ Example (adjust port/paths):
 ```bash
 esptool.py --port /dev/ttyUSB0 --baud 921600 write_flash -fm dout 0x00000 nodemcu.bin
 ```
+
 ### 2. Upload Lua scripts
 
 Use any uploader you like (ESPlorer, NodeMCU-Tool, etc.):
@@ -103,71 +155,82 @@ nodemcu-tool reset --port=/dev/cu.usbserial-21410
 [device]      ~ Hard-Reset executed (100ms) 
 [NodeMCU-Tool]~ disconnecting 
 ```
+
 ### 3. Connect via serial
 
 1. Open a serial terminal at 115200 baud.
 2. Reset the board.
 3. You should see logs similar to:
+
 ```
+[meteo] timers started
+[HB] heap=	20048
+
 [MEASURE] ===
 [heap]	20048
 [AHT] no new data, using cached
 [BMP] T=25.94C P=1002.7 hPa QNH=1026.8
 [TEMP] bmp=25.94C aht=26.00C avg=25.97C hum=30.4%
 [MUX] ch=0 S0=0 S1=0
-[MUX] ch=1 S0=1 S1=0
 [MQ] 135=249 3=161
 [MQ135]	normal x1.00
 [MQ3]	no alc x1.01
 [DSP] MQ135	249
 [MAX] shown:	249
+
+[MUX] ch=1 S0=1 S1=0
+[MQ] 135=249 3=161
 ```
-The MAX7219 display will show the current value selected by the logic (temperature, pressure, gas level, etc.).
+
+The MAX7219 display will show the current value selected by the display cycle logic (temperature, pressure, gas level, etc.).
 
 ## How It Works
 
-Measurement loop
+### Measurement Loop
 
-On each measurement cycle:
-1. BMP/BME is read:
-    - if values are valid and within reasonable range, the reading is used
-    - if out of range or nil, the script logs it and temporarily disables BMP data until it stabilizes
-2. AHT10 is read:
-    - if there is a new frame, it logs `[AHT] T=... H=...%`
-    - if there is no new data, it logs `"[AHT] no new data, using cached"` and reuses the last valid values
-3. Average temperature is computed:
-    - if both BMP and AHT are valid: `avg = (bmp_t + aht_t) / 2`
-	- if only one is valid: `avg = that_sensor`
-4. MQ135/MQ3 are read via the multiplexer:
-	- multiplexer channel is switched
-	- raw ADC values are mapped to a simple "x1.xx" scale and logged
-5. The selected metric is sent to MAX7219:
-	- `[DSP] Tavg*10 ...` or `[DSP] P ...`, etc.
-6. Heartbeat messages `[HB] heap=...` show memory status every N cycles.
+On each measurement cycle (every 5 seconds):
 
-The `"no new data, using cached"` messages from AHT10 are expected and simply indicate that the sensor did not provide a new measurement on this particular cycle. The last valid sample is reused.
+1. **AHT10 is read:**
+    - If there is a new frame, it logs `[AHT] T=... H=...%`
+    - If there is no new data, it logs `[AHT] no new data, using cached` and reuses the last valid values
 
-## Configuration
+2. **BMP280/BME280 is read:**
+    - If values are valid and within reasonable range (temp: -40–85°C, pressure: 800–1100 hPa), the reading is used
+    - If out of range or nil, the script logs it and falls back to cached values
+    - Logs: `[BMP] T=25.94C P=1002.7 hPa QNH=1026.8`
 
-Some parameters can be tuned directly in the Lua sources:
-- Measurement interval (in milliseconds)
-- MQ135 / MQ3 calibration factors
-- Pin mapping for:
-    - I²C (SDA, SCL)
-	- multiplexer select lines (S0, S1)
-	- MAX7219 control pins
-	- Thresholds / scaling for what is displayed on MAX7219
+3. **Average temperature is computed:**
+    - If both BMP and AHT are valid: `avg = (bmp_t + aht_t) / 2`
+    - If only one is valid: `avg = that_sensor`
 
-Check the constants at the top of `meteo.lua` and helper modules.
+4. **MQ135/MQ3 are read via the multiplexer:**
+    - Multiplexer channel is switched (S0/S1 pins control which sensor is active)
+    - Raw ADC values are read from A0
+    - Readings are mapped to a ratio scale and classified
+    - Logs: `[MUX] ch=0 S0=0 S1=0` and `[MQ] 135=249 3=161`
+
+5. **The selected metric is sent to MAX7219:**
+    - Display cycles through 4 modes:
+      - Mode 0: MQ135 raw value
+      - Mode 1: MQ3 raw value
+      - Mode 2: Tavg × 10 (average temperature)
+      - Mode 3: Pressure in hPa
+    - Logs: `[DSP] MQ135 249` and `[MAX] shown: 249`
+
+6. **Heartbeat messages** `[HB] heap=...` show memory status every 30 seconds.
+
+The `[AHT] no new data, using cached` messages are **expected and normal** — they simply indicate that the sensor did not provide a new measurement on this particular cycle. The last valid sample is safely reused.
 
 ## Roadmap / Ideas
+
 - Add Wi-Fi back (when RAM allows) and publish data to:
-- HTTP endpoint
-- MQTT broker
-- InfluxDB / Prometheus gateway
+  - HTTP endpoint
+  - MQTT broker
+  - InfluxDB / Prometheus gateway
 - Persist calibration values to flash (file API)
 - Simple web UI to show current readings
 - OTA firmware/script update
 
 ---
-License BSD
+
+License: BSD
