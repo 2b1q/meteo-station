@@ -221,6 +221,37 @@ On each measurement cycle (every 5 seconds):
 
 The `[AHT] no new data, using cached` messages are **expected and normal** — they simply indicate that the sensor did not provide a new measurement on this particular cycle. The last valid sample is safely reused.
 
+## Troubleshooting
+
+Before running an I²C scan on the board, upload the scanner script to the device:
+
+```bash
+nodemcu-tool upload i2c_scan.lua --port=/dev/cu.usbserial-21410
+```
+
+Then run the scan:
+
+```bash
+nodemcu-tool run i2c_scan.lua --port=/dev/cu.usbserial-21410
+```
+
+Expected output (example):
+
+```
+[scan] setup I2C on SDA=2 SCL=1
+[scan] found device at 0x38
+[scan] found device at 0x76
+[scan] done
+```
+
+If no devices are found, check:
+- Wiring: SDA = D2, SCL = D1, common GND, 3.3V power to sensors  
+- Pull-ups on the I²C lines (some breakout boards include them)  
+- Correct sensor addresses (AHT10 = 0x38, BMP280/BME280 = 0x76/0x77)  
+- NodeMCU firmware includes the `i2c` module
+
+You can also let `init.lua` perform an automatic I²C health check on boot (it probes 0x38, 0x76 and 0x77 and prints a summary).
+
 ## Roadmap / Ideas
 
 - Add Wi-Fi back (when RAM allows) and publish data to:
