@@ -22,7 +22,8 @@ local MUX_S1  = D8 -- MQ MUX S1
 -------------------------------------------------------
 local ALT_M = 200      -- altitude (m) for QNH
 
-local bmp_ok = false
+local bmp_ok          = false
+local bmp_fail_count  = 0
 
 local mq135_base = nil
 local mq3_base   = nil
@@ -77,6 +78,7 @@ local function bmp_setup()
   end
 
   bmp_ok = true
+  bmp_fail_count = 0
   print("[BMP] setup ok, mode:\t" .. tostring(mode_or_err))
 end
 
@@ -88,6 +90,14 @@ local function bmp_read()
   local T, P, H, QNH = bme280.read(ALT_M)
   if T == nil or P == nil then
     print("[BMP] read nil:\t", T, P, H, QNH)
+    bmp_fail_count = bmp_fail_count + 1
+    print(string.format("[BMP] read failed (%d in a row)", bmp_fail_count))
+
+    if bmp_fail_count >= 3 then
+      print("[BMP] too many failures, re-running setup()")
+      bmp_setup()
+    end
+
     return nil
   end
 
@@ -96,16 +106,32 @@ local function bmp_read()
   local humi     = H and (H / 1000.0) or nil
   local qnh      = QNH and (QNH / 1000.0) or nil
 
-  -- sanity filters
+  -- sanity filters: treat out-of-range as failure too
+  local out_of_range = false
+
   if temp < -40 or temp > 85 then
     print(string.format("[BMP] out range temp: T=%.2f P=%.1f", temp, pressure))
-    return nil
+    out_of_range = true
   end
 
   if pressure < 800 or pressure > 1100 then
     print(string.format("[BMP] out range press: T=%.2f P=%.1f", temp, pressure))
+    out_of_range = true
+  end
+
+  if out_of_range then
+    bmp_fail_count = bmp_fail_count + 1
+    print(string.format("[BMP] bad reading (%d in a row)", bmp_fail_count))
+
+    if bmp_fail_count >= 3 then
+      print("[BMP] too many bad readings, re-running setup()")
+      bmp_setup()
+    end
+
     return nil
   end
+
+  bmp_fail_count = 0
 
   local qnh_str  = qnh and string.format("%.1f", qnh) or "N/A"
   print(string.format("[BMP] T=%.2fC P=%.1f hPa QNH=%s", temp, pressure, qnh_str))
@@ -156,6 +182,12 @@ local function aht_read()
   end
 
   if t and h then
+    -- filter obviously insane startup spikes
+    if t < -40 or t > 85 then
+      print(string.format("[AHT] out of range T=%.2f H=%.1f%%, ignoring", t, h))
+      return last_aht_t, last_aht_h, false
+    end
+
     last_aht_t = t
     last_aht_h = h
     print(string.format("[AHT] T=%.2fC H=%.1f%%", t, h))
@@ -268,10 +300,9 @@ local function measure()
   print("\n[MEASURE] ===")
   print("[heap]\t" .. node.heap())
 
-  -- 1) AHT10 (if no new data, use last cached)
-  local aht_t, aht_h, aht_new = aht_read()
-
-  -- 2) BMP280
+  ---------------------------------------------------
+  -- 1) BMP280 FIRST (like in working logs)
+  ---------------------------------------------------
   local bmp_t, bmp_h, bmp_p, bmp_qnh = bmp_read()
 
   if bmp_t then
@@ -281,17 +312,24 @@ local function measure()
     last_qnh   = bmp_qnh
   else
     if last_temp then
-      bmp_t     = last_temp
-      bmp_h     = last_humi
-      bmp_p     = last_press
-      bmp_qnh   = last_qnh
+      bmp_t   = last_temp
+      bmp_h   = last_humi
+      bmp_p   = last_press
+      bmp_qnh = last_qnh
       print("[BMP] no fresh data, using cached")
     else
       print("[BMP] no data at all yet")
     end
   end
 
-  -- combined temperature / humidity log
+  ---------------------------------------------------
+  -- 2) AHT10 SECOND (uses same I2C bus)
+  ---------------------------------------------------
+  local aht_t, aht_h, aht_new = aht_read()
+
+  ---------------------------------------------------
+  -- Combined temperature / humidity log
+  ---------------------------------------------------
   local t_avg = nil
   local t_count = 0
   if bmp_t then
@@ -314,7 +352,9 @@ local function measure()
   print(string.format("[TEMP] bmp=%sC aht=%sC avg=%sC hum=%s",
     bmp_str, aht_str, avg_str, hum_str))
 
+  ---------------------------------------------------
   -- MQ sensors
+  ---------------------------------------------------
   local mq135 = read_mq(0)
   local mq3   = read_mq(1)
 
@@ -323,7 +363,9 @@ local function measure()
   print("[MQ135]\t" .. classify_mq135(mq135))
   print("[MQ3]\t" .. classify_mq3(mq3))
 
-  -- display rotation
+  ---------------------------------------------------
+  -- Display rotation
+  ---------------------------------------------------
   display_cycle = (display_cycle + 1) % 4
   local disp_val
 
