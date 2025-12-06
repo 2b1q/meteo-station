@@ -44,6 +44,22 @@ local last_aht_t   = nil
 local last_aht_h   = nil
 
 -------------------------------------------------------
+-- MQTT + WIFI CONFIG
+-------------------------------------------------------
+local MQTT_HOST  = "192.168.1.100"  -- change to your broker
+local MQTT_PORT  = 1883
+local MQTT_BASE  = "meteo"
+local MQTT_QOS   = 0
+local MQTT_RETAIN = 0
+
+local WIFI_SSID     = "" -- change
+local WIFI_PASSWORD = "" -- change
+
+local mqtt_client = nil
+local mqtt_topic_reading = MQTT_BASE .. "/" .. node.chipid() .. "/reading"
+local mqtt_topic_status  = MQTT_BASE .. "/" .. node.chipid() .. "/status"
+
+-------------------------------------------------------
 -- HELPERS
 -------------------------------------------------------
 local function safe_gpio_mode(pin, mode, label)
@@ -58,6 +74,124 @@ local function safe_gpio_write(pin, val, label)
   if not ok then
     print("[GPIO] write ERR", label or "?", pin, err)
   end
+end
+
+-------------------------------------------------------
+-- WIFI HELPERS
+-------------------------------------------------------
+local function wifi_setup()
+  if not wifi then
+    print("[WIFI] module not present, skip")
+    return
+  end
+
+  wifi.setmode(wifi.STATION)
+
+  wifi.sta.config({
+    ssid = WIFI_SSID,
+    pwd  = WIFI_PASSWORD,
+    auto = true
+  })
+
+  wifi.sta.connect()
+
+  -- simple status logger
+  tmr.create():alarm(5000, tmr.ALARM_AUTO, function(t)
+    local ip = wifi.sta.getip()
+    if ip then
+      print("[WIFI] connected, IP=" .. ip)
+      t:unregister()
+    else
+      print("[WIFI] waiting for IP...")
+    end
+  end)
+end
+
+-------------------------------------------------------
+-- MQTT HELPERS
+-------------------------------------------------------
+local function mqtt_connect()
+  if not mqtt then
+    print("[MQTT] module not present, skip")
+    return
+  end
+
+  if mqtt_client then
+    return
+  end
+
+  local client_id = "meteo-" .. node.chipid()
+  local m = mqtt.Client(client_id, 60)
+
+  -- last will: if device disappears, mark it offline
+  m:lwt(mqtt_topic_status, "offline", MQTT_QOS, MQTT_RETAIN)
+
+  m:on("connect", function(c)
+    print("[MQTT] connected as " .. client_id)
+    c:publish(mqtt_topic_status, "online", MQTT_QOS, MQTT_RETAIN)
+  end)
+
+  m:on("offline", function(c)
+    print("[MQTT] offline, will retry later")
+    mqtt_client = nil
+  end)
+
+  m:connect(
+    MQTT_HOST,
+    MQTT_PORT,
+    0,
+    function(c)
+      print("[MQTT] connect ok to " .. MQTT_HOST .. ":" .. MQTT_PORT)
+      mqtt_client = c
+    end,
+    function(c, reason)
+      print("[MQTT] connect failed, reason:\t" .. tostring(reason))
+      mqtt_client = nil
+    end
+  )
+end
+
+local function mqtt_publish_raw(topic, payload)
+  if not mqtt_client then
+    return
+  end
+  local ok, err = pcall(function()
+    mqtt_client:publish(topic, payload, MQTT_QOS, MQTT_RETAIN)
+  end)
+  if not ok then
+    print("[MQTT] publish ERR:\t" .. tostring(err))
+  else
+    print("[MQTT] published to " .. topic)
+  end
+end
+
+local function publish_measurement(bmp_t, bmp_p, bmp_qnh, aht_t, aht_h, mq135, mq3)
+  if not sjson then
+    return
+  end
+
+  local payload_tbl = {
+    deviceId = node.chipid(),
+    bmp = {
+      t   = bmp_t,
+      p   = bmp_p,
+      qnh = bmp_qnh,
+    },
+    aht = {
+      t = aht_t,
+      h = aht_h,
+    },
+    mq135 = mq135,
+    mq3   = mq3,
+  }
+
+  local ok, encoded = pcall(sjson.encode, payload_tbl)
+  if not ok then
+    print("[MQTT] sjson encode ERR:\t" .. tostring(encoded))
+    return
+  end
+
+  mqtt_publish_raw(mqtt_topic_reading, encoded)
 end
 
 -------------------------------------------------------
@@ -364,6 +498,11 @@ local function measure()
   print("[MQ3]\t" .. classify_mq3(mq3))
 
   ---------------------------------------------------
+  -- MQTT publish for backend ingestion
+  ---------------------------------------------------
+  publish_measurement(bmp_t, bmp_p, bmp_qnh, aht_t, aht_h, mq135, mq3)
+
+  ---------------------------------------------------
   -- Display rotation
   ---------------------------------------------------
   display_cycle = (display_cycle + 1) % 4
@@ -422,9 +561,15 @@ function M.start()
     i2c.setup(0, SDA_PIN, SCL_PIN, i2c.SLOW)
   end
 
+  -- WiFi + sensors + display + MQTT
+  wifi_setup()
   aht_setup()
   bmp_setup()
   max_init()
+  mqtt_connect()
+
+  -- periodic MQTT reconnect (in case Wi-Fi comes up later)
+  tmr.create():alarm(60000, tmr.ALARM_AUTO, mqtt_connect)
 
   -- heartbeat
   tmr.create():alarm(30000, tmr.ALARM_AUTO, function()
