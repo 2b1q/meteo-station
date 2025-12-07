@@ -1,185 +1,259 @@
-import React, { useEffect, useState } from "react"
-import "./App.css"
-import type { MeteoReading } from "./types"
-import { useSeries } from "./hooks/useSeries"
-import LineChart, { type ChartSeries } from "./components/LineChart"
-import { hPaToMmHg, toNumberOrNull } from "./helpers/chart"
+import React, { useEffect, useMemo, useState } from 'react';
+import './App.css';
+import { TimeRangeId, TIME_RANGES, TimeRangeSelector } from './components/TimeRangeSelector';
+import { ChartCard } from './components/ChartCard';
+import { ChartSeries } from './components/TimeSeriesChart';
+import { TimePoint } from './helpers/timeseries';
 
-const WS_URL =
-  (import.meta as any).env?.VITE_WS_URL || "ws://localhost:4000/ws"
+type MetricKey = 'aht_t' | 'aht_h' | 'bmp_t' | 'bmp_p' | 'mq135' | 'mq3';
 
-const App: React.FC = () => {
-  const [deviceId, setDeviceId] = useState<string | number | null>(null)
+type MetricSeriesMap = Record<MetricKey, TimePoint[]>;
 
-  // AHT
-  const ahtTemp = useSeries()
-  const ahtHum = useSeries()
-  // BMP
-  const bmpTemp = useSeries()
-  const bmpPressMm = useSeries()
-  // MQ
-  const mq135 = useSeries()
-  const mq3 = useSeries()
+type LiveValues = Partial<Record<MetricKey, number>> & {
+    deviceId?: number | string;
+    ts?: number;
+};
 
-  useEffect(() => {
-    const ws = new WebSocket(WS_URL)
+type WsPayload = {
+    ts?: string;
+    deviceId?: number | string;
+    aht_t?: number | null;
+    aht_h?: number | null;
+    bmp_t?: number | null;
+    bmp_p?: number | null;
+    mq135?: number | null;
+    mq3?: number | null;
+};
 
-    ws.onopen = () => {
-      console.log("[WS] connected to", WS_URL)
+const METRIC_KEYS: MetricKey[] = [
+    'aht_t',
+    'aht_h',
+    'bmp_t',
+    'bmp_p',
+    'mq135',
+    'mq3',
+];
+
+const MAX_RANGE_MS = 12 * 60 * 60 * 1000;
+
+const createEmptySeries = (): MetricSeriesMap => ({
+    aht_t: [],
+    aht_h: [],
+    bmp_t: [],
+    bmp_p: [],
+    mq135: [],
+    mq3: [],
+});
+
+function clampSeries(series: MetricSeriesMap, now: number): MetricSeriesMap {
+    const cutoff = now - MAX_RANGE_MS;
+    const next: MetricSeriesMap = createEmptySeries();
+
+    for (const key of METRIC_KEYS) {
+        next[key] = series[key].filter((p) => p.ts >= cutoff);
     }
 
-    ws.onmessage = event => {
-      try {
-        const raw = JSON.parse(event.data) as MeteoReading
-        const ts = Date.parse(raw.ts) || Date.now()
-
-        setDeviceId(raw.deviceId)
-
-        const bmpT = toNumberOrNull(raw.bmp_t)
-        const bmpP = toNumberOrNull(raw.bmp_p)
-        const bmpPmm = hPaToMmHg(bmpP)
-
-        const ahtT = toNumberOrNull(raw.aht_t)
-        const ahtH = toNumberOrNull(raw.aht_h)
-        const mq135v = toNumberOrNull(raw.mq135)
-        const mq3v = toNumberOrNull(raw.mq3)
-
-        ahtTemp.addPoint(ts, ahtT)
-        ahtHum.addPoint(ts, ahtH)
-
-        bmpTemp.addPoint(ts, bmpT)
-        bmpPressMm.addPoint(ts, bmpPmm)
-
-        mq135.addPoint(ts, mq135v)
-        mq3.addPoint(ts, mq3v)
-      } catch (err) {
-        console.error("[WS] failed to parse message", err)
-      }
-    }
-
-    ws.onerror = err => {
-      console.error("[WS] error", err)
-    }
-
-    ws.onclose = () => {
-      console.warn("[WS] closed")
-    }
-
-    return () => {
-      ws.close()
-    }
-  }, [ahtTemp, ahtHum, bmpTemp, bmpPressMm, mq135, mq3])
-
-  const ahtSeries: ChartSeries[] = [
-    {
-      id: "aht_t",
-      label: "Temperature",
-      unit: "°C",
-      color: "#1f77b4",
-      points: ahtTemp.points,
-    },
-    {
-      id: "aht_h",
-      label: "Humidity",
-      unit: "%",
-      color: "#2ca02c",
-      points: ahtHum.points,
-    },
-  ]
-
-  const bmpTempSeries: ChartSeries[] = [
-    {
-      id: "bmp_t",
-      label: "Temperature",
-      unit: "°C",
-      color: "#d62728",
-      points: bmpTemp.points,
-    },
-  ]
-
-  const bmpPressSeries: ChartSeries[] = [
-    {
-      id: "bmp_p_mm",
-      label: "Pressure",
-      unit: "mmHg",
-      color: "#7e22ce",
-      points: bmpPressMm.points,
-    },
-  ]
-
-  const mq135Series: ChartSeries[] = [
-    {
-      id: "mq135",
-      label: "MQ135 raw",
-      color: "#111827",
-      points: mq135.points,
-    },
-  ]
-
-  const mq3Series: ChartSeries[] = [
-    {
-      id: "mq3",
-      label: "MQ3 raw",
-      color: "#111827",
-      points: mq3.points,
-    },
-  ]
-
-  return (
-    <div className="app-root">
-      <header className="app-header">
-        <div>
-          <h1 className="app-title">Meteo Station</h1>
-          <p className="app-subtitle">
-            Live data from NodeMCU sensors
-            {deviceId && (
-              <>
-                {" • "}
-                Device ID: <span className="app-device">{String(deviceId)}</span>
-              </>
-            )}
-          </p>
-        </div>
-      </header>
-
-      <main className="app-main">
-        <LineChart
-          title="AHT10: Temperature & Humidity"
-          yLabel="°C / %"
-          series={ahtSeries}
-        />
-
-        <LineChart
-          title="BMP280: Temperature"
-          yLabel="°C"
-          series={bmpTempSeries}
-        />
-
-        <LineChart
-          title="BMP280: Pressure"
-          yLabel="mmHg"
-          series={bmpPressSeries}
-          reference={{
-            value: 760,
-            label: "Sea level 760 mmHg",
-            color: "#f97316",
-          }}
-        />
-
-        <LineChart
-          title="MQ135 raw"
-          yLabel="ADC value"
-          series={mq135Series}
-        />
-
-        <LineChart
-          title="MQ3 raw"
-          yLabel="ADC value"
-          series={mq3Series}
-        />
-      </main>
-    </div>
-  )
+    return next;
 }
 
-export default App
+export const App: React.FC = () => {
+    const [series, setSeries] = useState<MetricSeriesMap>(() => createEmptySeries());
+    const [live, setLive] = useState<LiveValues>({});
+    const [timeRangeId, setTimeRangeId] = useState<TimeRangeId>('15m');
+
+    // WebSocket for live data
+    useEffect(() => {
+        const wsUrl =
+            (import.meta as any).env?.VITE_WS_URL || 'ws://localhost:4000/ws';
+
+        const ws = new WebSocket(wsUrl);
+
+        ws.onmessage = (event) => {
+            try {
+                const payload: WsPayload = JSON.parse(event.data);
+                const ts = payload.ts ? new Date(payload.ts).getTime() : Date.now();
+
+                setSeries((prev) => {
+                    const updated: MetricSeriesMap = {
+                        aht_t: [...prev.aht_t],
+                        aht_h: [...prev.aht_h],
+                        bmp_t: [...prev.bmp_t],
+                        bmp_p: [...prev.bmp_p],
+                        mq135: [...prev.mq135],
+                        mq3: [...prev.mq3],
+                    };
+
+                    const addPoint = (key: MetricKey, value: number | null | undefined) => {
+                        if (typeof value === 'number' && !Number.isNaN(value)) {
+                            updated[key].push({ ts, value });
+                        }
+                    };
+
+                    addPoint('aht_t', payload.aht_t);
+                    addPoint('aht_h', payload.aht_h);
+                    addPoint('bmp_t', payload.bmp_t);
+                    addPoint('bmp_p', payload.bmp_p);
+                    addPoint('mq135', payload.mq135);
+                    addPoint('mq3', payload.mq3);
+
+                    return clampSeries(updated, ts);
+                });
+
+                setLive((prev) => ({
+                    ...prev,
+                    ts,
+                    deviceId: payload.deviceId ?? prev.deviceId,
+                    ...(typeof payload.aht_t === 'number' && { aht_t: payload.aht_t }),
+                    ...(typeof payload.aht_h === 'number' && { aht_h: payload.aht_h }),
+                    ...(typeof payload.bmp_t === 'number' && { bmp_t: payload.bmp_t }),
+                    ...(typeof payload.bmp_p === 'number' && { bmp_p: payload.bmp_p }),
+                    ...(typeof payload.mq135 === 'number' && { mq135: payload.mq135 }),
+                    ...(typeof payload.mq3 === 'number' && { mq3: payload.mq3 }),
+                }));
+            } catch (err) {
+                // ignore malformed messages
+                console.error('[WS] parse error', err);
+            }
+        };
+
+        ws.onerror = (err) => {
+            console.error('[WS] error', err);
+        };
+
+        return () => ws.close();
+    }, []);
+
+    const selectedRange = useMemo(
+        () => TIME_RANGES.find((r) => r.id === timeRangeId)!,
+        [timeRangeId]
+    );
+
+    // Filter series by selected time range
+    const rangedSeries = useMemo(() => {
+        const now = Date.now();
+        const cutoff = now - selectedRange.minutes * 60 * 1000;
+
+        const pick = (key: MetricKey): TimePoint[] =>
+            series[key].filter((p) => p.ts >= cutoff);
+
+        return {
+            aht_t: pick('aht_t'),
+            aht_h: pick('aht_h'),
+            bmp_t: pick('bmp_t'),
+            bmp_p: pick('bmp_p'),
+            mq135: pick('mq135'),
+            mq3: pick('mq3'),
+        };
+    }, [series, selectedRange]);
+
+    const deviceIdLabel =
+        live.deviceId !== undefined ? String(live.deviceId) : '—';
+
+    const lastTimeLabel =
+        live.ts !== undefined
+            ? new Date(live.ts).toLocaleTimeString(undefined, {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+            })
+            : '—';
+
+    const buildSeries = (
+        key: MetricKey,
+        label: string,
+    ): ChartSeries => ({
+        id: key,
+        label,
+        points: rangedSeries[key],
+    });
+
+    const ahtSeries: ChartSeries[] = [
+        buildSeries('aht_t', 'Temperature'),
+        buildSeries('aht_h', 'Humidity'),
+    ];
+
+    const bmpTempSeries: ChartSeries[] = [buildSeries('bmp_t', 'Temperature')];
+
+    const bmpPressureSeries: ChartSeries[] = [buildSeries('bmp_p', 'Pressure')];
+
+    const mq135Series: ChartSeries[] = [buildSeries('mq135', 'MQ135 raw')];
+
+    const mq3Series: ChartSeries[] = [buildSeries('mq3', 'MQ3 raw')];
+
+    return (
+        <div className="app-root">
+            <header className="app-header">
+                <div>
+                    <h1 className="app-title">Meteo Station</h1>
+                    <p className="app-subtitle">
+                        Live data from NodeMCU sensors · Device ID:&nbsp;
+                        <span className="app-subtitle-strong">{deviceIdLabel}</span>
+                    </p>
+                </div>
+
+                <div className="app-header-right">
+                    <div className="app-header-meta">
+                        <span className="label">Range</span>
+                        <TimeRangeSelector
+                            value={timeRangeId}
+                            onChange={setTimeRangeId}
+                        />
+                    </div>
+                    <div className="app-header-meta">
+                        <span className="label">Last update</span>
+                        <span className="value">{lastTimeLabel}</span>
+                    </div>
+                </div>
+            </header>
+
+            <main className="app-main">
+                <ChartCard
+                    title="AHT10: Temperature & Humidity"
+                    yLabel="°C / %"
+                    unitLabel="°C / %"
+                    lastUpdatedLabel={lastTimeLabel}
+                    series={ahtSeries}
+                    primarySeriesId="aht_t"
+                />
+
+                <ChartCard
+                    title="BMP280: Temperature"
+                    yLabel="°C"
+                    unitLabel="°C"
+                    lastUpdatedLabel={lastTimeLabel}
+                    series={bmpTempSeries}
+                    primarySeriesId="bmp_t"
+                />
+
+                <ChartCard
+                    title="BMP280: Pressure"
+                    yLabel="mmHg"
+                    unitLabel="mmHg"
+                    lastUpdatedLabel={lastTimeLabel}
+                    series={bmpPressureSeries}
+                    primarySeriesId="bmp_p"
+                />
+
+                <ChartCard
+                    title="MQ135 raw"
+                    yLabel="ADC value"
+                    unitLabel="ADC"
+                    lastUpdatedLabel={lastTimeLabel}
+                    series={mq135Series}
+                    primarySeriesId="mq135"
+                />
+
+                <ChartCard
+                    title="MQ3 raw"
+                    yLabel="ADC value"
+                    unitLabel="ADC"
+                    lastUpdatedLabel={lastTimeLabel}
+                    series={mq3Series}
+                    primarySeriesId="mq3"
+                />
+            </main>
+        </div>
+    );
+};
+
+export default App;
