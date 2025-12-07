@@ -73,6 +73,10 @@ graph LR
     - Topic: `meteo/<deviceId>/reading`
     - Payload: compact JSON with all sensor values
 
+### Web interface
+
+<img width="867" height="1818" alt="image" src="https://github.com/user-attachments/assets/7697c83a-ed4a-4dfc-a131-e42757babcfb" />
+
 ### Backend / Influx / Frontend
 
 - **Backend (Node.js + TypeScript)**
