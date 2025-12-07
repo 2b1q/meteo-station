@@ -1,0 +1,183 @@
+:root {
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, "SF Pro Text", sans-serif;
+  background: #f3f4f6;
+  color: #111827;
+}
+
+.app-root {
+  min-height: 100vh;
+  padding: 24px 32px 40px;
+}
+
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 24px;
+}
+
+.app-title {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.app-subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.app-device {
+  font-weight: 600;
+  color: #111827;
+}
+
+.app-main {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Карточка графика */
+
+.chart-card {
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  padding: 16px 20px 18px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+  gap: 12px;
+}
+
+.chart-title {
+  margin: 0;
+  font-size: 20px;
+}
+
+.chart-meta {
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.chart-meta-label {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #eef2ff;
+}
+
+.chart-meta-time {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #f9fafb;
+}
+
+.chart-current-block {
+  min-width: 160px;
+}
+
+.chart-current-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.chart-current-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #111827;
+}
+
+.chart-current-name {
+  color: #6b7280;
+}
+
+.chart-current-value {
+  font-weight: 600;
+  color: #111827;
+}
+
+.chart-empty {
+  font-size: 14px;
+  color: #9ca3af;
+  padding: 16px 0;
+}
+
+/* SVG / оси */
+
+.chart-svg {
+  width: 100%;
+  display: block;
+  margin-top: 6px;
+}
+
+.chart-plot-bg {
+  fill: #f9fafb;
+}
+
+.chart-axis {
+  stroke: #9ca3af;
+  stroke-width: 1;
+}
+
+.chart-grid {
+  stroke: #e5e7eb;
+  stroke-width: 0.5;
+}
+
+.chart-axis-label {
+  font-size: 10px;
+  fill: #4b5563;
+}
+
+.chart-axis-title {
+  font-size: 11px;
+  fill: #4b5563;
+}
+
+.chart-baseline {
+  stroke: #f97316;
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.chart-baseline-label {
+  font-size: 10px;
+  fill: #f97316;
+}
+
+.chart-refline {
+  stroke: #f97316;
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+
+.chart-refline-label {
+  font-size: 10px;
+  fill: #f97316;
+}
