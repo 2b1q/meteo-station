@@ -45,7 +45,7 @@ local last_aht_h     = nil
 local WIFI_SSID      = ""
 local WIFI_PASSWORD  = ""
 
-local MQTT_HOST      = "192.168.1.100"
+local MQTT_HOST      = "" -- MQ broker host
 local MQTT_PORT      = 1883
 local MQTT_BASE      = "meteo"
 
@@ -142,7 +142,7 @@ local function mqtt_send(bmp_t, bmp_p, bmp_qnh, aht_t, aht_h, mq135, mq3)
 end
 
 -------------------------------------------------------
--- BMP280 via bme280 (рабочий вариант с фильтрами)
+-- BMP280 via bme280
 -------------------------------------------------------
 local function bmp_setup()
   if not (bme280 and i2c) then
@@ -360,7 +360,7 @@ local function measure()
   local mq135 = read_mq(0)
   local mq3   = read_mq(1)
 
-  -- Если бек (MQTT) не готов — просто печатаем телеметрию
+  -- if backend not ready, do print only
   if not mqtt_client then
     print(
       string.format(
@@ -375,7 +375,7 @@ local function measure()
     )
   end
 
-  -- Отправка в MQTT, когда клиент есть
+  -- send telemetry when MQTT client is ready
   mqtt_send(bmp_t, bmp_p, bmp_qnh, aht_t, aht_h, mq135, mq3)
 
   -- Display rotation
@@ -426,7 +426,7 @@ function M.start()
 
   wifi_setup()
 
-  -- порядок: сначала BMP, потом AHT (по опыту)
+  -- flow: BMP then AHT 
   bmp_setup()
   aht_setup()
 

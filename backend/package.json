@@ -1,0 +1,23 @@
+{
+  "name": "meteo-backend",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node-dev --respawn src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@fastify/websocket": "^11.2.0",
+    "@influxdata/influxdb-client": "^1.35.0",
+    "dotenv": "^17.2.3",
+    "fastify": "^5.6.2",
+    "mqtt": "^5.14.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "fastify-tsconfig": "^3.0.0",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.9.3"
+  }
+}
