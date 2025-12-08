@@ -1,11 +1,14 @@
 import "dotenv/config";
 import Fastify from "fastify";
+import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
-import type { MeteoReading } from "./types";
+import type { HistoryResult, MeteoReading } from "./types";
 import { createMqttClient } from "./mqttClient";
-import { writePoint } from "./influx";
+import { writePoint, queryHistory } from "./influx";
+import { toNumber } from "./helpers";
 
 const PORT = Number(process.env.BACKEND_PORT ?? 4000);
+const MAX_HISTORY_MINUTES = 12 * 60;
 
 const fastify = Fastify({
     logger: true,
@@ -26,26 +29,48 @@ function broadcast(reading: MeteoReading): void {
     }
 }
 
-// helper: normalize to number | null
-function toNumber(value: unknown): number | null {
-    if (!value) return null;
-    const num = Number(value);
-    return Number.isFinite(num) ? num : null;
-}
-
 async function main(): Promise<void> {
     await fastify.register(websocket);
+    // CORS only development
+    await fastify.register(cors, {
+        // allow 5173 frontend dev server
+        origin: ['http://localhost:5173'],
+    });
 
-    fastify.get("/ws", { websocket: true }, (socket: any, _req) => {
+    fastify.get("/ws", { websocket: true }, (socket: any) => {
         wsClients.add(socket);
 
         socket.on("close", () => {
             wsClients.delete(socket);
         });
-    }
-    );
+    });
 
     fastify.get("/health", async () => ({ status: "ok" }));
+
+    fastify.get("/api/history", async (request, reply) => {
+        const query = request.query as { minutes?: string; deviceId?: string };
+
+        const minutesRaw = query.minutes ?? "15";
+        const minutesNum = Number(minutesRaw);
+
+        if (!Number.isFinite(minutesNum) || minutesNum <= 0) {
+            reply.status(400);
+            return { error: "Invalid 'minutes' query parameter" };
+        }
+
+        const rangeMinutes = Math.min(Math.floor(minutesNum), MAX_HISTORY_MINUTES);
+
+        const history: HistoryResult = await queryHistory({
+            rangeMinutes,
+            deviceId: query.deviceId,
+        });
+
+        return {
+            rangeMinutes,
+            deviceId: query.deviceId ?? null,
+            points: history,
+        };
+    });
 
     // MQTT => Influx + WS
     createMqttClient((_topic: string, message: Buffer) => {

@@ -1,23 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { TimePoint, downsampleSeries } from '../helpers/timeseries';
-
-export type ChartSeries = {
-    id: string;
-    label: string;
-    points: TimePoint[];
-};
-
-export type HoverPayload = {
-    ts: number;
-    values: Record<string, number | null>;
-};
-
-type Props = {
-    series: ChartSeries[];
-    height?: number;
-    showBaselineForId?: string;
-    onHoverChange?: (payload: HoverPayload | null) => void;
-};
+import { downsampleSeries } from '../helpers/timeseries';
+import { TimeSeriesChartProps, ChartSeries, TimePoint } from '../types';
 
 const SVG_WIDTH = 800;
 const SVG_HEIGHT_DEFAULT = 220;
@@ -26,7 +9,7 @@ const PADDING_RIGHT = 10;
 const PADDING_TOP = 20;
 const PADDING_BOTTOM = 30;
 
-export const TimeSeriesChart: React.FC<Props> = ({
+export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
     series,
     height = SVG_HEIGHT_DEFAULT,
     showBaselineForId,

@@ -1,21 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { ChartSeries, HoverPayload, TimeSeriesChart } from './TimeSeriesChart';
-import {
-    TimePoint,
-    computeStats,
-    formatNumber,
-} from '../helpers/timeseries';
+import { TimeSeriesChart } from './TimeSeriesChart';
+import { computeStats, formatNumber } from '../helpers/timeseries';
+import { ChartCardProps, HoverPayload, TimePoint } from '../types';
 
-type Props = {
-    title: string;
-    yLabel: string;
-    unitLabel?: string;
-    lastUpdatedLabel?: string;
-    series: ChartSeries[];
-    primarySeriesId: string;
-};
-
-export const ChartCard: React.FC<Props> = ({
+export const ChartCard: React.FC<ChartCardProps> = ({
     title,
     yLabel,
     unitLabel,

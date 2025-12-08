@@ -8,6 +8,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@fastify/cors": "^11.1.0",
     "@fastify/websocket": "^11.2.0",
     "@influxdata/influxdb-client": "^1.35.0",
     "dotenv": "^17.2.3",

@@ -2,28 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import './App.css';
 import { TimeRangeId, TIME_RANGES, TimeRangeSelector } from './components/TimeRangeSelector';
 import { ChartCard } from './components/ChartCard';
-import { ChartSeries } from './components/TimeSeriesChart';
-import { TimePoint } from './helpers/timeseries';
-
-type MetricKey = 'aht_t' | 'aht_h' | 'bmp_t' | 'bmp_p' | 'mq135' | 'mq3';
-
-type MetricSeriesMap = Record<MetricKey, TimePoint[]>;
-
-type LiveValues = Partial<Record<MetricKey, number>> & {
-    deviceId?: number | string;
-    ts?: number;
-};
-
-type WsPayload = {
-    ts?: string;
-    deviceId?: number | string;
-    aht_t?: number | null;
-    aht_h?: number | null;
-    bmp_t?: number | null;
-    bmp_p?: number | null;
-    mq135?: number | null;
-    mq3?: number | null;
-};
+import { MetricKey, MetricSeriesMap, LiveValues, WsPayload, HistoryResponse, TimePoint, ChartSeries } from './types';
 
 const METRIC_KEYS: MetricKey[] = [
     'aht_t',
@@ -45,6 +24,10 @@ const createEmptySeries = (): MetricSeriesMap => ({
     mq3: [],
 });
 
+const DEFAULT_API_BASE = 'http://localhost:4000';
+const apiBase = import.meta.env?.VITE_API_URL || DEFAULT_API_BASE;
+const wsUrl = import.meta.env?.VITE_WS_URL || 'ws://localhost:4000/ws';
+
 function clampSeries(series: MetricSeriesMap, now: number): MetricSeriesMap {
     const cutoff = now - MAX_RANGE_MS;
     const next: MetricSeriesMap = createEmptySeries();
@@ -63,9 +46,6 @@ export const App: React.FC = () => {
 
     // WebSocket for live data
     useEffect(() => {
-        const wsUrl =
-            (import.meta as any).env?.VITE_WS_URL || 'ws://localhost:4000/ws';
-
         const ws = new WebSocket(wsUrl);
 
         ws.onmessage = (event) => {
@@ -111,7 +91,6 @@ export const App: React.FC = () => {
                     ...(typeof payload.mq3 === 'number' && { mq3: payload.mq3 }),
                 }));
             } catch (err) {
-                // ignore malformed messages
                 console.error('[WS] parse error', err);
             }
         };
@@ -121,14 +100,69 @@ export const App: React.FC = () => {
         };
 
         return () => ws.close();
-    }, []);
+    }, [wsUrl]);
 
     const selectedRange = useMemo(
         () => TIME_RANGES.find((r) => r.id === timeRangeId)!,
         [timeRangeId]
     );
 
-    // Filter series by selected time range
+    // Load historical data from backend when range changes
+    useEffect(() => {
+        const controller = new AbortController();
+
+        async function loadHistory() {
+            const params = new URLSearchParams({
+                minutes: String(selectedRange.minutes),
+            });
+
+            const res = await fetch(`${apiBase}/api/history?${params.toString()}`, {
+                signal: controller.signal,
+            });
+
+            if (!res.ok) {
+                console.error('[HTTP] history error', res.status);
+                return;
+            }
+
+            const data: HistoryResponse = await res.json();
+
+            const nextSeries: MetricSeriesMap = {
+                aht_t: data.points.aht_t ?? [],
+                aht_h: data.points.aht_h ?? [],
+                bmp_t: data.points.bmp_t ?? [],
+                bmp_p: data.points.bmp_p ?? [],
+                mq135: data.points.mq135 ?? [],
+                mq3: data.points.mq3 ?? [],
+            };
+
+            setSeries(nextSeries);
+
+            const allPoints: TimePoint[] = Object.values(nextSeries).flat();
+            const latestTs =
+                allPoints.length > 0
+                    ? allPoints.reduce(
+                        (max, p) => (p.ts > max ? p.ts : max),
+                        allPoints[0].ts
+                    )
+                    : undefined;
+
+            setLive((prev) => ({
+                ...prev,
+                deviceId: prev.deviceId ?? (data.deviceId ?? undefined),
+                ts: prev.ts ?? latestTs ?? prev.ts,
+            }));
+        }
+
+        loadHistory().catch((err) => {
+            if (err instanceof DOMException && err.name === 'AbortError') return;
+            console.error('[HTTP] history fetch failed', err);
+        });
+
+        return () => controller.abort();
+    }, [apiBase, selectedRange.minutes]);
+
+    // Filter series by selected time range (для live-точек, которые могли прийти после последней загрузки)
     const rangedSeries = useMemo(() => {
         const now = Date.now();
         const cutoff = now - selectedRange.minutes * 60 * 1000;

@@ -1,15 +1,5 @@
 // Generic helpers for time-series transformations and stats
-
-export type TimePoint = {
-    ts: number;   // unix ms
-    value: number;
-};
-
-export type SeriesStats = {
-    min: number;
-    max: number;
-    avg: number;
-};
+import { SeriesStats, TimePoint } from "../types";
 
 export function computeStats(points: TimePoint[]): SeriesStats | null {
     if (!points.length) return null;
