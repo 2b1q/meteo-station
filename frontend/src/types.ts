@@ -51,7 +51,7 @@ export interface WsPayload {
     bmp_p?: number | null;
     mq135?: number | null;
     mq3?: number | null;
-};
+}
 
 export interface HistoryResponse {
     rangeMinutes: number;
@@ -64,6 +64,8 @@ export interface HistoryResponse {
 export interface ChartSeries {
     id: string;
     label: string;
+    unit?: string;
+    color?: string;
     points: TimePoint[];
 }
 

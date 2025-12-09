@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import './App.css';
 import { TimeRangeId, TIME_RANGES, TimeRangeSelector } from './components/TimeRangeSelector';
 import { ChartCard } from './components/ChartCard';
-import { MetricKey, MetricSeriesMap, LiveValues, WsPayload, HistoryResponse, TimePoint, ChartSeries } from './types';
+import { MetricKey, MetricSeriesMap, LiveValues, WsPayload, HistoryResponse, TimePoint, ChartSeries, } from './types';
 
 const METRIC_KEYS: MetricKey[] = [
     'aht_t',
@@ -14,6 +14,9 @@ const METRIC_KEYS: MetricKey[] = [
 ];
 
 const MAX_RANGE_MS = 12 * 60 * 60 * 1000;
+
+const COLOR_PRIMARY = '#111827';
+const COLOR_SECONDARY = '#2563eb';
 
 const createEmptySeries = (): MetricSeriesMap => ({
     aht_t: [],
@@ -104,7 +107,7 @@ export const App: React.FC = () => {
 
     const selectedRange = useMemo(
         () => TIME_RANGES.find((r) => r.id === timeRangeId)!,
-        [timeRangeId]
+        [timeRangeId],
     );
 
     // Load historical data from backend when range changes
@@ -143,7 +146,7 @@ export const App: React.FC = () => {
                 allPoints.length > 0
                     ? allPoints.reduce(
                         (max, p) => (p.ts > max ? p.ts : max),
-                        allPoints[0].ts
+                        allPoints[0].ts,
                     )
                     : undefined;
 
@@ -162,7 +165,7 @@ export const App: React.FC = () => {
         return () => controller.abort();
     }, [apiBase, selectedRange.minutes]);
 
-    // Filter series by selected time range (для live-точек, которые могли прийти после последней загрузки)
+    // Filter series by selected time range
     const rangedSeries = useMemo(() => {
         const now = Date.now();
         const cutoff = now - selectedRange.minutes * 60 * 1000;
@@ -192,27 +195,34 @@ export const App: React.FC = () => {
             })
             : '—';
 
-    const buildSeries = (
-        key: MetricKey,
-        label: string,
-    ): ChartSeries => ({
+    const buildSeries = (key: MetricKey, label: string, unit: string, color: string,): ChartSeries => ({
         id: key,
         label,
+        unit,
+        color,
         points: rangedSeries[key],
     });
 
     const ahtSeries: ChartSeries[] = [
-        buildSeries('aht_t', 'Temperature'),
-        buildSeries('aht_h', 'Humidity'),
+        buildSeries('aht_t', 'Temperature', '°C', COLOR_PRIMARY),
+        buildSeries('aht_h', 'Humidity', '%', COLOR_SECONDARY),
     ];
 
-    const bmpTempSeries: ChartSeries[] = [buildSeries('bmp_t', 'Temperature')];
+    const bmpTempSeries: ChartSeries[] = [
+        buildSeries('bmp_t', 'Temperature', '°C', COLOR_PRIMARY),
+    ];
 
-    const bmpPressureSeries: ChartSeries[] = [buildSeries('bmp_p', 'Pressure')];
+    const bmpPressureSeries: ChartSeries[] = [
+        buildSeries('bmp_p', 'Pressure', 'mmHg', COLOR_PRIMARY),
+    ];
 
-    const mq135Series: ChartSeries[] = [buildSeries('mq135', 'MQ135 raw')];
+    const mq135Series: ChartSeries[] = [
+        buildSeries('mq135', 'MQ135 raw', 'ADC', COLOR_PRIMARY),
+    ];
 
-    const mq3Series: ChartSeries[] = [buildSeries('mq3', 'MQ3 raw')];
+    const mq3Series: ChartSeries[] = [
+        buildSeries('mq3', 'MQ3 raw', 'ADC', COLOR_PRIMARY),
+    ];
 
     return (
         <div className="app-root">

@@ -9,6 +9,8 @@ const PADDING_RIGHT = 10;
 const PADDING_TOP = 20;
 const PADDING_BOTTOM = 30;
 
+const DEFAULT_COLORS = ['#111827', '#2563eb', '#10b981', '#f59e0b'];
+
 export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
     series,
     height = SVG_HEIGHT_DEFAULT,
@@ -286,12 +288,14 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
                         })
                         .join(' ');
 
+                    const strokeColor = s.color ?? DEFAULT_COLORS[idx % DEFAULT_COLORS.length];
+
                     return (
                         <path
                             key={s.id}
                             d={path}
                             fill="none"
-                            stroke={idx === 0 ? '#111827' : '#2563eb'}
+                            stroke={strokeColor}
                             strokeWidth={1.5}
                         />
                     );
@@ -316,13 +320,14 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
                             if (!closest) return null;
                             const cx = xScale(closest.ts);
                             const cy = yScale(closest.value);
+                            const fillColor = s.color ?? DEFAULT_COLORS[idx % DEFAULT_COLORS.length];
                             return (
                                 <circle
                                     key={s.id}
                                     cx={cx}
                                     cy={cy}
                                     r={3}
-                                    fill={idx === 0 ? '#111827' : '#2563eb'}
+                                    fill={fillColor}
                                     stroke="#ffffff"
                                     strokeWidth={1}
                                 />
